@@ -1,0 +1,164 @@
+---
+title: "report"
+author: "Siva"
+date: '2022-07-21'
+output: html_document
+---
+
+
+## NYPD Shooting Incident Data Analysis Report
+
+### Source of the data
+
+NYPD Shooting Incident Data is loaded from the website <https://catalog.data.gov/datase>. The dataset is read in from the url
+<https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD> 
+
+### Description of data
+
+This dataset is a breakdown of every shooting incident that occurred in NYC going back to 2006 through 2021. This data is manually extracted every quarter and reviewed by the Office of Management Analysis and Planning before being posted on the NYPD website. Each record represents a shooting incident in NYC and includes information about the event, the location and time of occurrence. In addition, information related to suspect and victim demographics is also included.
+
+There are 25596 recordings of 19 variables. It recorded shooting incident date, time, place, location, jurisdiction code, victim and suspect details like age group, sex, ethnicity and coordinates of the incident.
+
+
+```{r echo = FALSE , message = FALSE}
+# loading libraries
+library(tidyverse)
+library(dplyr)
+library(lubridate)
+library(stringr)
+library(knitr)
+library(readr)
+```
+
+
+```{r read_in, include=FALSE, echo = TRUE,messages = FALSE}
+
+url_in <- "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+incidents <- read_csv(url_in)
+
+```
+
+
+```{r clean_up, include=FALSE, echo = TRUE,messages = FALSE}
+incidents_clean <- incidents %>% select(OCCUR_DATE,BORO,JURISDICTION_CODE,     STATISTICAL_MURDER_FLAG,PERP_AGE_GROUP,PERP_SEX,VIC_AGE_GROUP,VIC_SEX) %>% mutate(OCCUR_DATE = year(mdy(OCCUR_DATE)))
+
+```
+
+
+### Problem Statement 1
+
+I am trying to find out how many shooting incidents in total were recorded for, in each BORO of New York each year from 2006 through 2021. 
+
+```{r echo = TRUE }
+num_of_incidents <- incidents_clean %>% rename(year=OCCUR_DATE) %>% select(year,BORO) %>% group_by_all() %>% count %>% pivot_wider(names_from = BORO, values_from = n) %>% ungroup() %>% rename(STATEN_ISLAND='STATEN ISLAND')
+```
+
+```{r echo = TRUE , results = 'asis'}
+library(knitr)
+kable(num_of_incidents[1:6, ],
+caption = 'Number of shooting incidents in NY counties from 2006 to 2021')
+
+```
+```{r echo = TRUE }
+num_of_incidents %>% gather(key,value,STATEN_ISLAND,BRONX,BROOKLYN,MANHATTAN,QUEENS) %>% ggplot(aes(x=year,y=value,color=key)) +geom_line()+ggtitle("NYPD Shooting Incidents")+xlab("Year")+ylab("Number of Incidents")
+
+```
+
+
+### Problem Statement 2
+
+I am trying to find out the total number of shooting incidents that were recorded from 2006 through 2021 in all the five counties, yearywise.
+
+
+```{r da2, include=FALSE, echo = TRUE,messages = FALSE}
+total <- num_of_incidents %>% mutate(Total=BRONX+BROOKLYN+MANHATTAN+QUEENS+STATEN_ISLAND) %>% select(year,Total)
+
+```
+```{r echo = TRUE , results = 'asis'}
+library(knitr)
+kable(total[1:2, ],
+caption = 'Total number of shooting incidents in NY counties from 2006 to 2021')
+
+```
+
+
+```{r echo = TRUE , results = 'asis'}
+barplot(height=total$Total, names=total$year , col="darkblue" ,xlab="Year", ylab="Total number of NY Incidents",main="Total number of shooting incidents",ylim=c(0,3000))
+```
+
+
+### Finding the relation between murder and incidents 
+
+Data modelling is performed between variables number of murder and number of shooting incidents.
+
+
+```{r data_model, include=FALSE, echo = TRUE,messages = FALSE}
+
+library(modelr)
+incidents_clean <- incidents_clean %>% rename(Year=OCCUR_DATE)
+inci_mur <- incidents_clean %>% select(Year,STATISTICAL_MURDER_FLAG) %>%  group_by_all() %>% count %>% pivot_wider(names_from = STATISTICAL_MURDER_FLAG,values_from = n) %>% rename(inc="FALSE", mur="TRUE") %>% mutate(incidents=inc+mur) %>% select(incidents,mur)
+
+model <- lm(mur~incidents, data=inci_mur)
+summary(model)
+inci_mur$pred <- round(predict(model))
+
+```
+
+
+```{r echo = TRUE , results = 'asis'}
+library(knitr)
+kable(inci_mur[1:4, ],caption = 'Modelling murder and incidents variables')
+names <- c("intercept", "slope","p-value","R-squared")
+values <- c(-33.73553,0.21362,4e-09,0.9159)
+stats <- data.frame(names,values)
+
+kable(stats[1:4, ],caption = 'Linear Modelling Statistics')
+
+```
+```{r echo = TRUE }
+library(ggplot2)
+
+ggplot(data=inci_mur) + geom_point(aes(x=incidents,y=mur),color="blue") + geom_point(aes(x=incidents,y=pred),color="red")+ 
+  ggtitle("incidents (Vs) murders")+xlab("incidents")+ylab("murders")
+```
+
+
+```{r echo = TRUE }
+hist(model$residuals)
+```
+
+### Analysis
+
+From plot 1, NYPD shooting incidents, it is evident that Brooklyn ranks number one in highest number of shooting incidents, and Staten Island is the last, that is recorded lowest number of incidents. Manhattan and Queens seems to be the same as far as shooting incidents are concerned. The second highest is Bronx.
+
+
+From plot 2, Total number of shooting incidents, it starts from around 2000 number of incidents then increases and decreases year after year then decreases to less than 1500 in 2013, inceases and flattens out at 2017, 2018 and 2019. But suddenly there is spike in 2020 and keep rising.
+
+From plot 3, incidents (Vs) murders there is a linear relation between number of incidents and murder. 
+
+### Conclusions
+
+* Based on the data and the plot, Staten Island is considered safer place than Brooklyn.
+* Based on the data and the plot, number of shooting incidents in the recent years have increased drastically.
+* Based on the data and the plot, it seems as the number of shooting incidents increases, number of murders also increase with it.
+
+
+### Bias Identified
+
+1. There are lot of missing values in the suspect's demographics. As the recordings were made manually, there could be bias in data collection.
+2. It looks like men are more involved in incidents than women. There is a possibility for gender bias.
+3. Confirmation Bias is a kind of bias that data analysts or interpreters either intentionally or unintentionally look for patterns that confirm their beliefs and opinions. 
+
+
+### Further investigations
+
+* Which age group of people are the suspects in shooting incidents?
+* Which age group of people are highly affected by shooting incidents?
+* Whether gender of people are mainly the suspects (or victims) of such incidents?
+* Which specific locations or buildings are highly prone to shooting incidents?
+
+
+
+```{r echo = FALSE }
+sessionInfo()
+```
